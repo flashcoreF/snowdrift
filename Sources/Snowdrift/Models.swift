@@ -94,6 +94,9 @@ struct Flake {
     var speed: CGFloat
     var phase: CGFloat
     var freq: CGFloat
+    var spin: CGFloat = 0
+    var spinV: CGFloat = 0
+    var shape = 0
     var kick = CGVector.zero // push from the cursor
     var clump = false        // a chunk of fallen snow (falls fast, no drifting)
     var v = CGVector.zero    // velocity, used by clumps
@@ -121,6 +124,7 @@ struct Snowman {
     var wobble: CGFloat = 0
     var wobbleV: CGFloat = 0
     var grow: CGFloat = 0    // 0...1 build-up animation
+    var santaHat = false
 }
 
 /// Small deterministic random generator, so a splat keeps its shape every frame.

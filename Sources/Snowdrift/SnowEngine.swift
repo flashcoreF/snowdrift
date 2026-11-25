@@ -13,9 +13,12 @@ final class SnowEngine {
     private var mainHeight: CGFloat = 0
     private var windows: [TrackedWindow] = []
     private var piles: [CGWindowID: Pile] = [:]
-    private var pileList: [Pile] = []           // front-most window first
+    private(set) var pileList: [Pile] = []      // front-most window first
     private var parked: [CGWindowID: (pile: Pile, since: Date)] = [:]
-    private var grounds: [Pile] = []
+    private(set) var grounds: [Pile] = []
+
+    /// Holiday decorations (tree, lights, sleigh, fireworks). Owned by the app delegate.
+    weak var festive: Festive?
 
     // Moving things
     private var flakes: [Flake] = []
@@ -26,7 +29,7 @@ final class SnowEngine {
     private var snowmen: [Snowman] = []
 
     // Weather
-    private var time: CGFloat = 0
+    private(set) var time: CGFloat = 0
     private var gust: CGFloat = 0
     private var gustTarget: CGFloat = 0
     private var nextGustChange: CGFloat = 0
@@ -45,6 +48,7 @@ final class SnowEngine {
 
     // Pre-rendered art
     private let flakeSprite: CGImage? = SnowEngine.makeFlakeSprite()
+    private let crystalSprites: [CGImage] = (0..<3).compactMap { SnowEngine.makeCrystalSprite(variant: $0) }
     private let ballGradient = CGGradient(
         colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
         colors: [CGColor(red: 1, green: 1, blue: 1, alpha: 1),
@@ -158,6 +162,7 @@ final class SnowEngine {
         stepHeldBall(dt: dt)
         stepBalls(dt: dt)
         stepSnowmen(dt: dt)
+        festive?.step(dt: dt)
 
         for i in splats.indices { splats[i].age += dt }
         splats.removeAll { $0.age > 7 }
@@ -172,7 +177,7 @@ final class SnowEngine {
     /// True when there is nothing at all to draw, so the screen doesn't need repainting.
     var isIdle: Bool {
         flakes.isEmpty && balls.isEmpty && heldBall == nil && splats.isEmpty && snowmen.isEmpty
-            && !settings.frost && !snowballMode && pilesEmpty
+            && !settings.frost && !snowballMode && pilesEmpty && (festive?.isIdle ?? true)
     }
 
     private var windNow: CGFloat {
@@ -217,7 +222,10 @@ final class SnowEngine {
                      r: (0.9 + 3.0 * z * z) * CGFloat.random(in: 0.75...1.2),
                      speed: 28 + 72 * z * CGFloat.random(in: 0.8...1.2),
                      phase: CGFloat.random(in: 0...(2 * .pi)),
-                     freq: CGFloat.random(in: 0.6...1.8))
+                     freq: CGFloat.random(in: 0.6...1.8),
+                     spin: CGFloat.random(in: 0...(2 * .pi)),
+                     spinV: CGFloat.random(in: -1.2...1.2),
+                     shape: Int.random(in: 0..<3))
     }
 
     private func screenIndex(containingX x: CGFloat, y: CGFloat) -> Int? {
@@ -261,6 +269,7 @@ final class SnowEngine {
                 }
                 f.kick.dx *= kickDecay
                 f.kick.dy *= kickDecay
+                f.spin += f.spinV * dt
                 let sway = sin(time * f.freq + f.phase) * 14 * f.z
                 nx = f.p.x + ((wind + sway) * f.z + f.kick.dx) * dt
                 ny = f.p.y + (f.speed + f.kick.dy) * dt
@@ -342,7 +351,7 @@ final class SnowEngine {
         pile.clear()
     }
 
-    private func burst(at p: CGPoint, count: Int, speed: ClosedRange<CGFloat>, size: ClosedRange<CGFloat>) {
+    func burst(at p: CGPoint, count: Int, speed: ClosedRange<CGFloat>, size: ClosedRange<CGFloat>) {
         for _ in 0..<count {
             guard flakes.count < maxFlakes else { return }
             var f = makeFlake(at: p)
@@ -362,6 +371,11 @@ final class SnowEngine {
         sampleMouse(dt: 0)
         heldBall = Snowball(p: mouse, prev: mouse, r: 6)
         heldHistory = [(mouse, CACurrentMediaTime())]
+    }
+
+    /// Removes a snowball that was let go a moment ago (the first click of a double-click).
+    func cancelRecentBall() {
+        balls.removeAll { $0.age < 0.6 && $0.r < 12 }
     }
 
     func cancelGather() {
@@ -442,6 +456,12 @@ final class SnowEngine {
 
     /// Returns true when the ball hit something and is gone.
     private func collide(_ b: inout Snowball) -> Bool {
+        // Holiday decorations (tree, gifts, sleigh)
+        if let festive, festive.snowballHit(at: b.p, prev: b.prev, velocity: b.v) {
+            splat(at: b.p, r: b.r * 0.8, burstScale: 1)
+            return true
+        }
+
         // Snowmen
         for idx in snowmen.indices {
             let box = snowmanBox(snowmen[idx])
@@ -513,11 +533,13 @@ final class SnowEngine {
             let s = screens[0]
             sx = CGFloat.random(in: (s.minX + s.width * 0.12)...(s.maxX - s.width * 0.12))
         }
-        snowmen.append(Snowman(x: sx, scale: .random(in: 0.85...1.15)))
+        var m = Snowman(x: sx, scale: .random(in: 0.85...1.15))
+        m.santaHat = settings.holiday && Bool.random()
+        snowmen.append(m)
         if snowmen.count > 6 { snowmen.removeFirst() }
     }
 
-    private func groundY(at x: CGFloat) -> CGFloat? {
+    func groundY(at x: CGFloat) -> CGFloat? {
         for g in grounds {
             if let c = g.column(at: x), g.visible[c] { return g.surfaceY(c) }
         }
@@ -575,11 +597,13 @@ final class SnowEngine {
     func draw(in ctx: CGContext, rect: CGRect) {
         if settings.frost { drawFrost(ctx, rect) }
         drawPiles(ctx, rect)
+        festive?.drawBack(in: ctx, rect: rect)
         for s in splats where rect.insetBy(dx: -s.r * 2, dy: -s.r * 2).contains(s.p) { drawSplat(s, ctx) }
         for m in snowmen { drawSnowman(m, ctx, rect) }
         drawFlakes(ctx, rect)
         for b in balls where rect.insetBy(dx: -b.r, dy: -b.r).contains(b.p) { drawBall(at: b.p, r: b.r, ctx, shadow: true) }
         if let b = heldBall, rect.insetBy(dx: -b.r, dy: -b.r).contains(b.p) { drawBall(at: b.p, r: b.r, ctx, shadow: true) }
+        festive?.drawFront(in: ctx, rect: rect)
     }
 
     private func drawFlakes(_ ctx: CGContext, _ rect: CGRect) {
@@ -589,7 +613,16 @@ final class SnowEngine {
             let size = f.r * 2.6
             let r = CGRect(x: f.p.x - size / 2, y: f.p.y - size / 2, width: size, height: size)
             ctx.setAlpha(f.clump ? 0.95 : 0.35 + 0.6 * f.z)
-            if let sprite = flakeSprite {
+            if !f.clump && f.r > 2.5 && !crystalSprites.isEmpty {
+                // Close-up flakes show their six-armed crystal shape and slowly turn.
+                let cs = f.r * 3.4
+                ctx.saveGState()
+                ctx.translateBy(x: f.p.x, y: f.p.y)
+                ctx.rotate(by: f.spin)
+                ctx.draw(crystalSprites[f.shape % crystalSprites.count],
+                         in: CGRect(x: -cs / 2, y: -cs / 2, width: cs, height: cs))
+                ctx.restoreGState()
+            } else if let sprite = flakeSprite {
                 ctx.draw(sprite, in: r)
             } else {
                 ctx.setFillColor(CGColor(gray: 1, alpha: 1))
@@ -640,6 +673,41 @@ final class SnowEngine {
         ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 3,
                       color: CGColor(red: 0.3, green: 0.4, blue: 0.55, alpha: 0.45))
         ctx.setFillColor(CGColor(red: 0.985, green: 0.99, blue: 1, alpha: 0.98))
+        ctx.addPath(path)
+        ctx.fillPath()
+        ctx.restoreGState()
+        drawIcicles(ctx, rect)
+    }
+
+    /// Icicles hang under the edge wherever snow has piled up deep.
+    private func drawIcicles(_ ctx: CGContext, _ rect: CGRect) {
+        let path = CGMutablePath()
+        for pile in pileList {
+            guard pile.frame.maxX > rect.minX, pile.frame.minX < rect.maxX,
+                  pile.baseY > rect.minY, pile.baseY < rect.maxY else { continue }
+            var c = 4
+            while c < pile.count - 4 {
+                defer { c += 7 }
+                let h = pile.heights[c]
+                guard h > 7, pile.visible[c] else { continue }
+                // Stable pseudo-random length per spot.
+                let seed = CGFloat((Int(pile.frame.minX) &* 31 &+ c &* 17) % 97) / 97
+                let len = (h - 6) * (0.7 + seed * 1.1)
+                let w: CGFloat = 2.2 + seed * 1.6
+                let x = pile.x(of: c)
+                let y = pile.baseY
+                path.move(to: CGPoint(x: x - w, y: y - 0.5))
+                path.addLine(to: CGPoint(x: x + w, y: y - 0.5))
+                path.addLine(to: CGPoint(x: x + 0.3, y: y + len))
+                path.addLine(to: CGPoint(x: x - 0.3, y: y + len))
+                path.closeSubpath()
+            }
+        }
+        guard !path.isEmpty else { return }
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 2,
+                      color: CGColor(red: 0.3, green: 0.45, blue: 0.65, alpha: 0.5))
+        ctx.setFillColor(CGColor(red: 0.86, green: 0.94, blue: 1, alpha: 0.85))
         ctx.addPath(path)
         ctx.fillPath()
         ctx.restoreGState()
@@ -742,11 +810,26 @@ final class SnowEngine {
         ctx.fillPath()
 
         // Hat
-        ctx.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.15, alpha: 1))
-        ctx.fill(CGRect(origin: P(-15, -106), size: CGSize(width: 30 * s, height: 3.5 * s)))
-        ctx.fill(CGRect(origin: P(-10, -125), size: CGSize(width: 20 * s, height: 20 * s)))
-        ctx.setFillColor(CGColor(red: 0.78, green: 0.15, blue: 0.18, alpha: 1))
-        ctx.fill(CGRect(origin: P(-10, -110), size: CGSize(width: 20 * s, height: 3.5 * s)))
+        if m.santaHat {
+            ctx.setFillColor(CGColor(red: 0.82, green: 0.12, blue: 0.15, alpha: 1))
+            ctx.move(to: P(-13, -103)); ctx.addLine(to: P(13, -103))
+            ctx.addQuadCurve(to: P(18, -122), control: P(8, -122))
+            ctx.addQuadCurve(to: P(-13, -103), control: P(-6, -118))
+            ctx.closePath()
+            ctx.fillPath()
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+            ctx.addPath(CGPath(roundedRect: CGRect(origin: P(-15, -106), size: CGSize(width: 30 * s, height: 6 * s)),
+                               cornerWidth: 3 * s, cornerHeight: 3 * s, transform: nil))
+            ctx.fillPath()
+            let pom = P(18, -122)
+            ctx.fillEllipse(in: CGRect(x: pom.x - 4 * s, y: pom.y - 4 * s, width: 8 * s, height: 8 * s))
+        } else {
+            ctx.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.15, alpha: 1))
+            ctx.fill(CGRect(origin: P(-15, -106), size: CGSize(width: 30 * s, height: 3.5 * s)))
+            ctx.fill(CGRect(origin: P(-10, -125), size: CGSize(width: 20 * s, height: 20 * s)))
+            ctx.setFillColor(CGColor(red: 0.78, green: 0.15, blue: 0.18, alpha: 1))
+            ctx.fill(CGRect(origin: P(-10, -110), size: CGSize(width: 20 * s, height: 3.5 * s)))
+        }
 
         // Face
         ctx.setFillColor(CGColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1))
@@ -785,6 +868,49 @@ final class SnowEngine {
             ctx.drawRadialGradient(g, startCenter: c, startRadius: 0, endCenter: c, endRadius: 240, options: [])
         }
         ctx.restoreGState()
+    }
+
+    /// A six-armed snow crystal, drawn once and reused.
+    nonisolated private static func makeCrystalSprite(variant: Int) -> CGImage? {
+        let size = 48
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        let c = CGFloat(size) / 2
+        let arm = c * 0.82
+        ctx.translateBy(x: c, y: c)
+        ctx.setShadow(offset: .zero, blur: 3, color: CGColor(red: 0.85, green: 0.92, blue: 1, alpha: 0.9))
+        ctx.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.setLineCap(.round)
+        ctx.setLineWidth(variant == 2 ? 2.6 : 2.0)
+        for k in 0..<6 {
+            ctx.saveGState()
+            ctx.rotate(by: CGFloat(k) * .pi / 3)
+            ctx.move(to: .zero); ctx.addLine(to: CGPoint(x: 0, y: arm))
+            switch variant {
+            case 0:
+                for t in [0.45, 0.7] as [CGFloat] {
+                    let b = arm * (1 - t) * 0.55
+                    ctx.move(to: CGPoint(x: 0, y: arm * t)); ctx.addLine(to: CGPoint(x: b, y: arm * t + b))
+                    ctx.move(to: CGPoint(x: 0, y: arm * t)); ctx.addLine(to: CGPoint(x: -b, y: arm * t + b))
+                }
+            case 1:
+                let t: CGFloat = 0.55
+                let b = arm * 0.3
+                ctx.move(to: CGPoint(x: 0, y: arm * t)); ctx.addLine(to: CGPoint(x: b, y: arm * t + b * 0.6))
+                ctx.move(to: CGPoint(x: 0, y: arm * t)); ctx.addLine(to: CGPoint(x: -b, y: arm * t + b * 0.6))
+                ctx.move(to: CGPoint(x: -arm * 0.12, y: arm * 0.25)); ctx.addLine(to: CGPoint(x: arm * 0.12, y: arm * 0.25))
+            default:
+                let b = arm * 0.22
+                ctx.move(to: CGPoint(x: 0, y: arm * 0.8)); ctx.addLine(to: CGPoint(x: b, y: arm * 0.62))
+                ctx.move(to: CGPoint(x: 0, y: arm * 0.8)); ctx.addLine(to: CGPoint(x: -b, y: arm * 0.62))
+            }
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fillEllipse(in: CGRect(x: -2.5, y: -2.5, width: 5, height: 5))
+        return ctx.makeImage()
     }
 
     nonisolated private static func makeFlakeSprite() -> CGImage? {

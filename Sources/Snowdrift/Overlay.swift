@@ -61,11 +61,38 @@ final class SnowView: NSView {
         ctx.translateBy(x: -quartzOrigin.x, y: -quartzOrigin.y)
         engine.draw(in: ctx, rect: CGRect(origin: quartzOrigin, size: bounds.size))
         ctx.restoreGState()
+        if let festive = engine.festive { drawTexts(festive.overlayTexts) }
         if engine.snowballMode { drawHint() }
     }
 
+    /// Countdown numbers, the New Year banner and gift messages.
+    private func drawTexts(_ texts: [OverlayText]) {
+        let screenRect = CGRect(origin: quartzOrigin, size: bounds.size)
+        for t in texts where t.alpha > 0.01 {
+            let center: CGPoint
+            if let p = t.position {
+                guard screenRect.insetBy(dx: -200, dy: -100).contains(p) else { continue }
+                center = CGPoint(x: p.x - quartzOrigin.x, y: p.y - quartzOrigin.y)
+            } else {
+                center = CGPoint(x: bounds.midX, y: bounds.midY * 0.8)
+            }
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.55 * t.alpha)
+            shadow.shadowBlurRadius = t.size / 6
+            shadow.shadowOffset = NSSize(width: 0, height: -2)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: t.size * t.scale, weight: t.size > 40 ? .heavy : .semibold),
+                .foregroundColor: t.color.withAlphaComponent(t.alpha),
+                .shadow: shadow,
+            ]
+            let str = NSAttributedString(string: t.text, attributes: attrs)
+            let sz = str.size()
+            str.draw(at: NSPoint(x: center.x - sz.width / 2, y: center.y - sz.height / 2))
+        }
+    }
+
     private func drawHint() {
-        let text = "Snowball mode  ·  hold to scoop snow, flick to throw  ·  double-click to build a snowman  ·  Esc to exit"
+        let text = "Snowball mode  ·  hold to scoop snow, flick to throw  ·  click a present to open it  ·  double-click for a snowman  ·  Esc to exit"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium),
             .foregroundColor: NSColor.white,
@@ -82,8 +109,15 @@ final class SnowView: NSView {
     // MARK: Snowball mode input
 
     override func mouseDown(with event: NSEvent) {
+        engine.sampleMouse(dt: 0)
+        // Clicking a present opens it.
+        if let festive = engine.festive, festive.handleClick(at: engine.mouse) {
+            engine.cancelGather()
+            return
+        }
         if event.clickCount >= 2 {
             engine.cancelGather()
+            engine.cancelRecentBall()
             engine.buildSnowman(nearX: engine.mouse.x)
             return
         }

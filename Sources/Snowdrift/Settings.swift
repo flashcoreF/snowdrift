@@ -43,6 +43,19 @@ enum WindStrength: Int, CaseIterable {
     }
 }
 
+enum LightStyle: Int, CaseIterable {
+    case multicolor, warmWhite, icyBlue, off
+
+    var title: String {
+        switch self {
+        case .multicolor: return "Colourful"
+        case .warmWhite: return "Warm white"
+        case .icyBlue: return "Icy blue"
+        case .off: return "No lights"
+        }
+    }
+}
+
 /// User preferences, stored in UserDefaults.
 final class Settings {
     static let shared = Settings()
@@ -75,6 +88,37 @@ final class Settings {
     var cursorBreeze: Bool {
         get { bool("cursorBreeze", true) }
         set { d.set(newValue, forKey: "cursorBreeze") }
+    }
+
+    /// Master switch for the Christmas and New Year decorations.
+    var holiday: Bool {
+        get { bool("holiday", true) }
+        set { d.set(newValue, forKey: "holiday") }
+    }
+
+    var lights: LightStyle {
+        get { LightStyle(rawValue: d.object(forKey: "lights") as? Int ?? 0) ?? .multicolor }
+        set { d.set(newValue.rawValue, forKey: "lights") }
+    }
+
+    var tree: Bool {
+        get { bool("tree", true) }
+        set { d.set(newValue, forKey: "tree") }
+    }
+
+    var sleigh: Bool {
+        get { bool("sleigh", true) }
+        set { d.set(newValue, forKey: "sleigh") }
+    }
+
+    var sounds: Bool {
+        get { bool("sounds", false) }
+        set { d.set(newValue, forKey: "sounds") }
+    }
+
+    var newYearShow: Bool {
+        get { bool("newYearShow", true) }
+        set { d.set(newValue, forKey: "newYearShow") }
     }
 
     var frost: Bool {

@@ -9,8 +9,23 @@ A small menu bar app that brings a snowy evening to your Mac desktop.
 - **Wind and gusts**, from calm to gusty.
 - **Your cursor stirs the snow** as you move it through the flakes.
 - **Frosty screen edges**, if you want the "looking out a cold window" feel.
+- **Real snow crystals and icicles.** Close-up flakes are six-armed crystals that slowly turn, and icicles grow under deep snow.
+
+### 🎄 Holiday edition
+
+- **String lights along your windows**, hanging just under the snow line. They twinkle, chase and blink, in colourful, warm white or icy blue.
+- **A decorated Christmas tree** in the bottom-right corner, with a glowing star, ornaments, garland and twinkling lights. Hit it with a snowball (or click it in snowball mode) and it shakes.
+- **Presents under the tree.** In snowball mode, click one (or hit it with a snowball) to open it: confetti, a chime and a little surprise message. New presents appear a while later.
+- **A flying sleigh** pulled by reindeer crosses the sky every few minutes (more often on Christmas Eve and Christmas Day), leaving a golden sparkle trail and dropping a present you can open. Hit it with a snowball and it drops another one.
+- **New Year's Eve countdown.** At 23:59:50 on December 31 a big 10-second countdown appears, then "Happy New Year!" and over a minute of fireworks. You can also start fireworks or a practice countdown any time.
+- **Sounds (optional, off by default):** synthesised sleigh bells and chimes. Turn them on in the Holidays menu.
+- Snowmen sometimes wear a Santa hat. The menu shows how many days are left until Christmas and New Year.
 
 Snow never gets in the way: you can click, type and drag through it as usual. Only snowball mode takes over the mouse, and Esc gets you out.
+
+## Updating from an older version
+
+Unzip the new `Snowdrift.zip` (replace the old folder), then run the same `bash build.sh install` command. It quits the old copy and starts the new one. Your settings are kept.
 
 ## Install (about 5 minutes, no Xcode needed)
 
@@ -56,6 +71,7 @@ Click the ❄ in the menu bar:
 | Build a snowman | Puts a snowman at the bottom of your screen |
 | Shake snow off windows | Knocks all the settled snow off |
 | Clear all snow | Clears everything, snowmen included |
+| 🎄 Holidays ▸ | Decorations on/off, string light style, tree, sleigh, sounds, New Year countdown, plus "Send the sleigh now", "Fireworks now" and "Practice New Year countdown" |
 | Open at login | Start Snowdrift when you log in (works once it's in Applications) |
 
 **Shortcut:** press **Control-Option-S** anywhere to jump in and out of snowball mode.
@@ -81,5 +97,7 @@ It's a small Swift package (AppKit, no dependencies):
 - `Overlay.swift`: transparent, click-through windows, one per display.
 - `AppDelegate.swift`: menu bar menu, timers, snowball mode.
 - `HotKey.swift`: the Control-Option-S shortcut.
+- `Festive.swift`: string lights, tree, presents, sleigh, fireworks and the New Year countdown.
+- `HolidaySound.swift`: sleigh bells and chimes, synthesised on the fly.
 
 `swift build` compiles it; `build.sh` wraps the binary into `Snowdrift.app`.
